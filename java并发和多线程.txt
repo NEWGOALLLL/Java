@@ -1,0 +1,43 @@
+关于上下文切换和synchronized和volatile关键字的总结:
+  public class LightLock {
+
+    private static volatile boolean isStop = false;
+
+    public static void stopIt() {
+        isStop = true;
+    }
+
+    public static void main(String[] args) {
+        new Thread1().start();
+        while (!isStop) { // 主線程會一直等待isStop值變為true。
+        }
+        System.out.printf("stop");
+    }
+
+    static class Thread1 extends Thread {
+        @Override
+        public void run() {
+            try {
+                Thread.sleep(3000);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+            stopIt();
+        }
+    }
+}
+主方法中定义了两个线程，一个主线程一个子线程。主线程一直循环判断isSTop的值，子线程修改isStop的值。主方法开始运行后，主线程进入循环，子线程等待3s后修改isStop的值。
+此时，如果这个变量是被volatile修饰的，那么当子线程修改缓存中的isStop值时，会将这个值写回到主内存中，同时由于缓存一致性原则使其他缓存数据失效要求更新，实现内存的可见性。
+如果这个变量没有被volatile修饰，那么当子线程修改缓存中的isStop值时，不会将这个值写回到主内存中，并且由于和主内存中的值不一致会被标记为脏数据，当下次上下文切换时，脏数据会被刷新重新同步主内存中的数据(这个操作取决于缓存一致性协议和操作系统的策略)。
+
+一、多线程的概念:
+cpu处理多线程并不是实际意义上的并发执行。cpu通过给每个线程分配时间片(几十ms)，然后循环从前往后处理所有时间片，每次从上一个时间片切换到下一个时间片会保存上个时间片的状态方便下次处理。以实现“并行”。
+二、减少上下文切换。
+（总结：避免使用锁和使用协程）
+cpu的多线程实际上是在时间片中循环执行的。1s钟约切换1000次。由此可知，若线程越多所需的切换时长可能就越多，所导致的切换耗时增加。
+	（1）无锁并发编程。多线程竞争锁的时候会触发上下文切换。所以避免锁的使用可以有效减少切换次数。可以使用一些办法来避免使用锁，如将数据的ID按照Hash算法取模分段，不同线程处理不同段的数据。
+	（2）CAS算法。使用CAS算法更新数据，避免加锁。
+	（3）协程。在单线程里实现多任务调度，并在单线程里维持多任务切换。
+三、synchronized和volatile
+	    volatile轻量级锁，如果一个变量被volatile声明，java线程内存模型会确保所有线程看到的这个变量的值是一致的。并且使用此变量不会触发上下文切换操作。
+    synchronize重量级锁，如果一个变量使用synchronize关键字，那么当线程使用此变量时将会死等直到锁被释放，切可能会存在插队的情况。
